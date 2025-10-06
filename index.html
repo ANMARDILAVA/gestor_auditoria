@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestor de Auditoría y Trámites - EPS CAJACOPI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- FullCalendar CSS and JS -->
+    <link href='https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css' rel='stylesheet' />
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js'></script>
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/locales/es.js'></script>
+    
+    <!-- Librerías de Firebase -->
+    <script>
+        // IMPORTANTE: Reemplaza esto con la configuración de tu propio proyecto de Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyAl4N-CBj4znQo0DhUQU3z4dSmTXjYRtxk",
+            authDomain: "gestor-bitacora.firebaseapp.com",
+            projectId: "gestor-bitacora",
+            storageBucket: "gestor-bitacora.appspot.com",
+            messagingSenderId: "551984065452",
+            appId: "1:551984065452:web:771e275ed40ec67a2be809",
+            measurementId: "G-FV7CHCETHW"
+        };
+        // El resto del código usará esta configuración. No necesitas tocar nada más abajo de esta línea.
+        window.firebaseConfig = firebaseConfig;
+    </script>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; }
+        .chart-container { position: relative; width: 100%; max-width: 500px; margin-left: auto; margin-right: auto; height: 320px; max-height: 350px; }
+        @media (min-width: 768px) { .chart-container { height: 350px; max-height: 400px; } }
+        .ips-list-container, #user-list, .window-notes-history { scrollbar-width: thin; scrollbar-color: #9ca3af #e5e7eb; }
+        .ips-list-container::-webkit-scrollbar, #user-list::-webkit-scrollbar, .window-notes-history::-webkit-scrollbar { width: 6px; }
+        .ips-list-container::-webkit-scrollbar-track, #user-list::-webkit-scrollbar-track, .window-notes-history::-webkit-scrollbar-track { background: #e5e7eb; border-radius: 10px; }
+        .ips-list-container::-webkit-scrollbar-thumb, #user-list::-webkit-scrollbar-thumb, .window-notes-history::-webkit-scrollbar-thumb { background-color: #9ca3af; border-radius: 10px; border: 2px solid #e5e7eb; }
+        .chart-container canvas:hover, #ips-list li:hover { cursor: pointer; }
+        .nav-link.active { background-color: #4f46e5; color: white; }
+        .table-row-hover:hover { background-color: #f3f4f6; cursor: pointer; }
+        .modal { transition: opacity 0.25s ease; }
+        .modal-content { transition: transform 0.25s ease; }
+        .window-nav-link.active { background-color: #eef2ff; color: #4338ca; font-weight: 600; }
+        .fc-event { cursor: pointer; }
+        .fc-daygrid-event {
+            white-space: normal !important;
+            overflow-wrap: break-word;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #4f46e5;
+            animation: spin 1s ease infinite;
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <!-- Pantalla de Login -->
+    <div id="login-screen" class="min-h-screen flex items-center justify-center bg-gray-100">
+        <div class="w-full max-w-md p-8 space-y-6 bg-white rounded-xl shadow-lg">
+            <h2 class="text-3xl font-bold text-center text-gray-900">Iniciar Sesión</h2>
+            <form id="login-form" class="space-y-6">
+                <div>
+                    <label for="username" class="text-sm font-medium text-gray-700">Usuario (email)</label>
+                    <input id="username" name="username" type="email" required class="mt-1 w-full p-3 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label for="password" class="text-sm font-medium text-gray-700">Clave</label>
+                    <input id="password" name="password" type="password" required class="mt-1 w-full p-3 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div id="login-error" class="text-red-500 text-sm text-center hidden"></div>
+                <button type="submit" class="w-full py-3 px-4 text-white bg-blue-600 rounded-md font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    Ingresar
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Aplicación Principal (Oculta por defecto) -->
+    <div id="main-app" class="hidden flex h-screen bg-gray-100">
+        
+        <!-- Modal para Trámites -->
+        <div id="task-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 hidden opacity-0">
+            <div class="modal-content bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[70vh] transform scale-95 flex flex-col">
+                <div class="flex justify-between items-center p-4 border-b border-gray-200 rounded-t-xl bg-gray-50 flex-shrink-0">
+                    <div class="flex items-center space-x-3">
+                        <span id="modal-status-indicator" class="h-4 w-4 rounded-full"></span>
+                        <h3 class="text-lg font-bold text-gray-800" id="modal-title">Detalles del Trámite</h3>
+                    </div>
+                    <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div class="flex flex-grow overflow-hidden">
+                    <aside class="w-48 bg-gray-100 p-4 border-r border-gray-200 flex-shrink-0">
+                        <nav class="flex flex-col space-y-2">
+                             <a href="#" onclick="handleWindowNav('info')" class="window-nav-link px-3 py-2 text-sm font-medium rounded-md text-gray-700 hover:bg-gray-200">Información General</a>
+                             <a href="#" onclick="handleWindowNav('history')" class="window-nav-link px-3 py-2 text-sm font-medium rounded-md text-gray-700 hover:bg-gray-200">Historial de Seguimiento</a>
+                        </nav>
+                    </aside>
+                    <div class="flex-grow p-6 overflow-y-auto">
+                        <div id="window-view-info" class="window-view">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div><h4 class="font-semibold text-gray-500 text-sm mb-1">ID Paciente</h4><p id="modal-id-paciente" class="text-gray-800 text-lg"></p></div>
+                                <div><h4 class="font-semibold text-gray-500 text-sm mb-1">Nombre Paciente</h4><p id="modal-nombre-paciente" class="text-gray-800 text-lg"></p></div>
+                                <div><h4 class="font-semibold text-gray-500 text-sm mb-1">Tipo de Actividad</h4><p id="modal-tipo-actividad" class="text-gray-800 text-lg"></p></div>
+                                <div><h4 class="font-semibold text-gray-500 text-sm mb-1">Nombre IPS</h4><p id="modal-nombre-ips" class="text-gray-800 text-lg"></p></div>
+                                <div class="md:col-span-2"><h4 class="font-semibold text-gray-500 text-sm mb-1">Nombre Auditor</h4><p id="modal-nombre-auditor" class="text-gray-800 text-lg"></p></div>
+                                <div class="bg-gray-100 p-3 rounded-md"><h4 class="font-semibold text-gray-500 text-sm mb-1">Fecha de Creación</h4><p id="modal-fecha-inicio" class="text-gray-800 text-lg"></p></div>
+                                <div class="bg-gray-100 p-3 rounded-md"><h4 class="font-semibold text-gray-500 text-sm mb-1">Fecha Inicio Solicitud</h4><p id="modal-fecha-inicio-solicitud" class="text-gray-800 text-lg"></p></div>
+                                <div class="bg-gray-100 p-3 rounded-md"><h4 class="font-semibold text-gray-500 text-sm mb-1">Fecha de Fin</h4><p id="modal-fecha-fin" class="text-gray-800 text-lg"></p></div>
+                            </div>
+                            <div class="mt-6"><h4 class="font-semibold text-gray-500 text-sm mb-1">Descripción Inicial</h4><p id="modal-descripcion" class="bg-gray-100 p-3 rounded-md text-gray-700 whitespace-pre-wrap"></p></div>
+                        </div>
+                        <div id="window-view-history" class="window-view hidden">
+                             <div>
+                                <h4 class="font-semibold text-gray-500 text-sm mb-2">Historial de Seguimiento</h4>
+                                <div id="modal-notes-history" class="w-full h-48 bg-gray-50 border border-gray-200 rounded-md p-3 space-y-3 overflow-y-auto window-notes-history">
+                                </div>
+                            </div>
+                            <div id="add-note-section" class="hidden mt-4">
+                                <h4 class="font-semibold text-gray-500 text-sm mb-2">Añadir Nueva Nota</h4>
+                                <form id="add-note-form">
+                                    <textarea id="modal-new-note" class="w-full h-20 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" placeholder="Escriba aquí su nota de seguimiento..."></textarea>
+                                    <button type="submit" class="mt-2 w-full px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700">Agregar Nota</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Modal para Visitas (Calendario) -->
+        <div id="visit-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 hidden opacity-0">
+             <div class="modal-content bg-white rounded-xl shadow-2xl w-full max-w-lg transform scale-95 flex flex-col">
+                <div class="flex justify-between items-center p-4 border-b">
+                    <h3 class="text-lg font-bold" id="visit-modal-title">Detalles de la Visita</h3>
+                    <button onclick="closeVisitModal()" class="text-gray-400 hover:text-gray-600">&times;</button>
+                </div>
+                <div class="p-6 space-y-4">
+                    <div id="visit-details-view" class="hidden">
+                        <p><strong class="font-semibold">IPS:</strong> <span id="visit-modal-ips-details"></span></p>
+                        <p><strong class="font-semibold">Fecha y Hora:</strong> <span id="visit-modal-date-details"></span></p>
+                        <p><strong class="font-semibold">Auditor:</strong> <span id="visit-modal-auditor-details"></span></p>
+                        <p><strong class="font-semibold">Estado:</strong> <span id="visit-modal-status-details"></span></p>
+                        <div><strong class="font-semibold">Notas:</strong> <div id="visit-modal-notes-details" class="mt-1 text-sm text-gray-700 bg-gray-100 p-2 rounded-md whitespace-pre-wrap"></div></div>
+                    </div>
+                    <div id="visit-edit-view" class="hidden">
+                        <form id="visit-form">
+                            <input type="hidden" id="visit-id">
+                            <div>
+                                <label for="visit-ips" class="block text-sm font-medium text-gray-700">IPS a visitar*</label>
+                                <input type="text" id="visit-ips" name="visit-ips" required placeholder="Escriba el nombre de la IPS" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm">
+                            </div>
+                            <div>
+                                <label for="visit-date" class="block text-sm font-medium text-gray-700">Fecha y Hora*</label>
+                                <input type="datetime-local" id="visit-date" name="visit-date" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm">
+                            </div>
+                             <div>
+                                <label for="visit-notes" class="block text-sm font-medium text-gray-700">Objetivo / Notas</label>
+                                <textarea id="visit-notes" name="visit-notes" rows="3" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></textarea>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div id="visit-modal-footer" class="px-6 py-4 bg-gray-50 flex justify-end space-x-3">
+                    <!-- Botones se añaden dinámicamente -->
+                </div>
+             </div>
+        </div>
+
+        <!-- Menú Lateral -->
+        <aside id="sidebar" class="w-64 bg-gray-800 text-white flex-col p-4 flex-shrink-0 z-30 fixed inset-y-0 left-0 transform -translate-x-full md:relative md:translate-x-0 transition-transform duration-200 ease-in-out flex">
+            <h1 class="text-2xl font-bold text-white mb-8">Gestor App</h1>
+            <nav class="flex-grow space-y-2">
+                <a href="#" data-view="dashboard" class="nav-link flex items-center px-4 py-2 rounded-md hover:bg-gray-700 transition-colors">
+                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                    Dashboard
+                </a>
+                <a href="#" data-view="table" class="nav-link flex items-center px-4 py-2 rounded-md hover:bg-gray-700 transition-colors">
+                     <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                    Panel de Trámites
+                </a>
+                <a href="#" data-view="calendar" class="nav-link flex items-center px-4 py-2 rounded-md hover:bg-gray-700 transition-colors">
+                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    Calendario
+                </a>
+                <a href="#" data-view="historic" class="nav-link flex items-center px-4 py-2 rounded-md hover:bg-gray-700 transition-colors">
+                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Histórico
+                </a>
+                <a href="#" id="nav-add-tramite" data-view="add-tramite" class="nav-link flex items-center px-4 py-2 rounded-md hover:bg-gray-700 transition-colors">
+                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Nuevo Trámite
+                </a>
+                <a href="#" id="nav-export" data-view="export" class="nav-link flex items-center px-4 py-2 rounded-md hover:bg-gray-700 transition-colors">
+                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    Exportar
+                </a>
+                <a href="#" id="nav-admin" data-view="admin" class="nav-link flex items-center px-4 py-2 rounded-md hover:bg-gray-700 transition-colors">
+                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M15 21a6 6 0 00-9-5.197m0 0A10.99 10.99 0 002.62 16m16.76 0a10.99 10.99 0 01-2.28 2.451M15 21a10.99 10.99 0 002.28-2.451m0 0a10.99 10.99 0 00-2.28-2.451M12 12a10.99 10.99 0 01-2.451-2.28m0 0a10.99 10.99 0 01-2.451 2.28m0 0A10.99 10.99 0 012.62 16m0 0a10.99 10.99 0 012.451-2.28m0 0a10.99 10.99 0 012.28-2.451"></path></svg>
+                    Administración
+                </a>
+            </nav>
+            <div class="mt-auto">
+                <div class="text-left p-2 bg-gray-700 rounded-md">
+                    <p id="user-display" class="font-semibold text-sm truncate"></p>
+                    <p id="role-display" class="text-xs text-gray-400"></p>
+                </div>
+                <button onclick="handleLogout()" class="w-full mt-2 flex items-center px-4 py-2 rounded-md text-gray-300 hover:bg-red-600 hover:text-white transition-colors">
+                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                    Cerrar Sesión
+                </button>
+            </div>
+        </aside>
+
+        <!-- Overlay para menú móvil -->
+        <div id="sidebar-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-20 hidden md:hidden"></div>
+
+        <!-- Área de Contenido Principal -->
+        <div class="flex-1 flex flex-col relative overflow-hidden">
+            <header class="bg-white shadow-sm flex-shrink-0 z-10">
+                <div class="flex justify-between items-center p-4">
+                     <button id="hamburger-btn" class="text-gray-500 md:hidden">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                    </button>
+                    <div class="relative w-full max-w-md ml-4 md:ml-0">
+                         <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg class="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path></svg>
+                        </div>
+                        <input type="text" id="global-search" placeholder="Buscar por ID o Nombre de Paciente..." class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                    </div>
+                </div>
+            </header>
+            <main id="main-content" class="flex-1 p-6 lg:p-8 overflow-y-auto relative">
+                
+                <section id="dashboard-view" class="view">
+                    <div class="text-center mb-8"><h2 class="text-3xl font-bold text-gray-900">Métricas y Estadísticas</h2><p class="mt-2 text-lg text-gray-600">Un resumen en tiempo real del estado de todos los trámites.</p></div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                        <div class="bg-white p-6 rounded-xl shadow-lg flex flex-col justify-center items-center text-center">
+                            <h3 class="text-lg font-semibold text-gray-600">Casos por Iniciar</h3>
+                            <p id="kpi-iniciado" class="text-5xl font-bold text-orange-600 mt-2">0</p>
+                        </div>
+                        <div class="bg-white p-6 rounded-xl shadow-lg flex flex-col justify-center items-center text-center">
+                            <h3 class="text-lg font-semibold text-gray-600">Casos en Gestión</h3>
+                            <p id="kpi-en-tramite" class="text-5xl font-bold text-blue-600 mt-2">0</p>
+                        </div>
+                        <div class="bg-white p-6 rounded-xl shadow-lg flex flex-col justify-center items-center text-center">
+                            <h3 class="text-lg font-semibold text-gray-600">Casos Finalizados</h3>
+                            <p id="kpi-finalizados" class="text-5xl font-bold text-green-600 mt-2">0</p>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="bg-white p-6 rounded-xl shadow-lg flex flex-col hover:bg-gray-50 transition-colors">
+                            <h3 class="text-lg font-semibold text-center text-gray-600 mb-4">IPS con Trámites Activos</h3>
+                            <div id="ips-list-container" class="ips-list-container flex-grow overflow-y-auto pr-2 h-64 md:h-auto">
+                                <ul id="ips-list" class="space-y-3"></ul>
+                            </div>
+                        </div>
+                        <div class="bg-white p-6 rounded-xl shadow-lg hover:bg-gray-50 transition-colors"><h3 class="text-lg font-semibold text-center text-gray-600 mb-4">Actividades por Tipo</h3><div class="chart-container"><canvas id="type-chart"></canvas></div></div>
+                        <div class="bg-white p-6 rounded-xl shadow-lg hover:bg-gray-50 transition-colors"><h3 class="text-lg font-semibold text-center text-gray-600 mb-4">Trámites por Estado</h3><div class="chart-container"><canvas id="status-chart"></canvas></div></div>
+                    </div>
+                </section>
+
+                <section id="table-view" class="view hidden">
+                    <section id="active-filters-section" class="hidden mb-6 bg-white p-4 rounded-xl shadow-lg">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center flex-wrap gap-2" id="active-filters-list">
+                                <h4 class="text-sm font-semibold text-gray-600">Filtros Activos:</h4>
+                            </div>
+                            <button onclick="clearFilters()" class="text-sm text-blue-600 hover:text-blue-800 font-semibold flex-shrink-0 ml-4">Limpiar Filtros</button>
+                        </div>
+                    </section>
+                    <div class="bg-white p-6 rounded-xl shadow-lg">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-2xl font-bold text-gray-900">Panel de Trámites Activos</h2>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left text-gray-500">
+                                <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                    <tr>
+                                        <th scope="col" class="px-4 py-2">Identificación</th>
+                                        <th scope="col" class="px-4 py-2">Afiliado</th>
+                                        <th scope="col" class="px-4 py-2">Tipo Actividad</th>
+                                        <th scope="col" class="px-4 py-2">Prestador</th>
+                                        <th scope="col" class="px-4 py-2">Fecha Inicio Solicitud</th>
+                                        <th scope="col" class="px-4 py-2">Días en Trámite</th>
+                                        <th scope="col" class="px-4 py-2">Estatus</th>
+                                        <th scope="col" class="px-4 py-2">Responsable</th>
+                                        <th scope="col" class="px-4 py-2">Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tasks-table-body"></tbody>
+                            </table>
+                        </div>
+                        <nav id="pagination-controls" class="flex justify-between items-center pt-4"></nav>
+                    </div>
+                </section>
+
+                <section id="historic-view" class="view hidden">
+                    <div class="bg-white p-6 rounded-xl shadow-lg">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-2xl font-bold text-gray-900">Histórico de Trámites Cerrados</h2>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left text-gray-500">
+                                <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                     <tr>
+                                        <th scope="col" class="px-4 py-2">Identificación</th>
+                                        <th scope="col" class="px-4 py-2">Afiliado</th>
+                                        <th scope="col" class="px-4 py-2">Tipo Actividad</th>
+                                        <th scope="col" class="px-4 py-2">Prestador</th>
+                                        <th scope="col" class="px-4 py-2">Fecha Fin</th>
+                                        <th scope="col" class="px-4 py-2">Días Totales</th>
+                                        <th scope="col" class="px-4 py-2">Estatus</th>
+                                        <th scope="col" class="px-4 py-2">Responsable</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="historic-tasks-table-body"></tbody>
+                            </table>
+                        </div>
+                        <nav id="historic-pagination-controls" class="flex justify-between items-center pt-4"></nav>
+                    </div>
+                </section>
+
+                <section id="calendar-view" class="view hidden">
+                    <div class="bg-white p-6 rounded-xl shadow-lg">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-2xl font-bold text-gray-900">Calendario de Visitas</h2>
+                            <button id="add-visit-btn" class="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg shadow hover:bg-blue-700">Agendar Nueva Visita</button>
+                        </div>
+                        <div id="calendar"></div>
+                    </div>
+                </section>
+
+                <section id="add-tramite-view" class="view hidden">
+                     <div class="bg-white p-6 rounded-xl shadow-lg max-w-4xl mx-auto">
+                        <div class="mb-8 p-4 border-2 border-dashed rounded-lg">
+                            <h3 class="text-xl font-bold mb-3 text-center">Creación Rápida con IA ✨</h3>
+                            <p class="text-center text-gray-600 mb-4">Pega el contenido de un correo o texto y la IA llenará el formulario por ti.</p>
+                            <textarea id="email-paste-area" class="w-full h-32 p-3 border rounded-md" placeholder="Pega aquí el texto del caso..."></textarea>
+                            <div class="flex justify-center mt-3">
+                                <button id="analyze-email-btn" class="bg-indigo-600 text-white font-semibold px-6 py-2 rounded-lg shadow hover:bg-indigo-700 transition-all flex items-center space-x-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M12 21v-1m0-16a7 7 0 100 14 7 7 0 000-14z"></path></svg>
+                                    <span>Analizar y Autocompletar</span>
+                                </button>
+                            </div>
+                            <div id="ai-loader" class="hidden mt-4 flex justify-center items-center">
+                                <div class="spinner"></div>
+                                <p class="ml-3 text-gray-600">Analizando información...</p>
+                            </div>
+                        </div>
+
+                        <h2 class="text-2xl font-bold mb-6 pt-6 border-t">Añadir Nuevo Trámite (Manual)</h2>
+                        <form id="add-task-form" class="space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="id_paciente" class="block text-sm font-medium text-gray-700">ID Paciente*</label>
+                                    <input name="id_paciente" type="text" required class="mt-1 p-2 border rounded-md w-full">
+                                </div>
+                                <div>
+                                    <label for="nombre_paciente" class="block text-sm font-medium text-gray-700">Nombre Paciente</label>
+                                    <input name="nombre_paciente" type="text" class="mt-1 p-2 border rounded-md w-full">
+                                </div>
+                                <div>
+                                    <label for="nombre_auditor" class="block text-sm font-medium text-gray-700">Nombre Auditor*</label>
+                                    <input name="nombre_auditor" type="text" required class="mt-1 p-2 border rounded-md w-full">
+                                </div>
+                                <div>
+                                    <label for="nombre_ips" class="block text-sm font-medium text-gray-700">Nombre IPS*</label>
+                                    <input name="nombre_ips" type="text" required class="mt-1 p-2 border rounded-md w-full">
+                                </div>
+                                <div>
+                                    <label for="fecha_inicio_solicitud" class="block text-sm font-medium text-gray-700">Fecha de Inicio de Solicitud*</label>
+                                    <input name="fecha_inicio_solicitud" type="date" required class="mt-1 p-2 border rounded-md w-full">
+                                </div>
+                            </div>
+                            <div>
+                                <label for="tipo_actividad" class="block text-sm font-medium text-gray-700">Tipo de Actividad*</label>
+                                <select name="tipo_actividad" required class="mt-1 p-2 border rounded-md w-full">
+                                    <option value="">Seleccione Tipo de Actividad*</option>
+                                    <option>Revisión Historia Clínica</option><option>Solicitud Oxígeno</option><option>Solicitud PHD</option><option>Solicitud Autorizaciones</option><option>Solicitud Historia Clínica</option><option>Emisión Concepto Pertinencia</option><option>Solicitud Ambulancia</option><option>Referencia</option><option>Contrareferencia</option><option>Otro</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="descripcion_inicial" class="block text-sm font-medium text-gray-700">Descripción Inicial*</label>
+                                <textarea name="descripcion_inicial" required class="mt-1 p-2 border rounded-md w-full h-24"></textarea>
+                            </div>
+                            <div class="flex justify-end space-x-3">
+                                <button type="button" onclick="handleNavigation('dashboard')" class="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300">Cancelar</button>
+                                <button type="submit" class="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700">Guardar Trámite</button>
+                            </div>
+                        </form>
+                     </div>
+                </section>
+
+                <section id="export-view" class="view hidden">
+                    <div class="bg-white p-6 rounded-xl shadow-lg max-w-4xl mx-auto">
+                        <h2 class="text-2xl font-bold mb-6">Exportar Base de Datos</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+                            <div><label for="filter-month" class="block text-sm font-medium text-gray-700">Filtrar por Mes</label><select id="filter-month" class="mt-1 block w-full p-2 border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"></select></div>
+                            <div><label for="filter-ips" class="block text-sm font-medium text-gray-700">Filtrar por Institución</label><select id="filter-ips" class="mt-1 block w-full p-2 border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"></select></div>
+                            <div><label for="filter-auditor" class="block text-sm font-medium text-gray-700">Filtrar por Auditor</label><select id="filter-auditor" class="mt-1 block w-full p-2 border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"></select></div>
+                            <button id="download-btn" class="bg-green-600 text-white font-semibold px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-all w-full h-10 flex items-center justify-center"><svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>Descargar CSV</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="admin-view" class="view hidden">
+                    <div class="bg-white p-6 rounded-xl shadow-lg max-w-4xl mx-auto">
+                         <h2 class="text-2xl font-bold mb-6">Panel de Administración</h2>
+                         <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                             <div>
+                                <h3 class="text-lg font-semibold mb-3">Crear Nuevo Usuario</h3>
+                                <form id="create-user-form" class="space-y-4">
+                                    <input name="new_username" type="email" placeholder="Email del usuario*" required class="w-full p-2 border rounded-md">
+                                    <input name="new_password" type="password" placeholder="Clave (mínimo 6 caracteres)*" required class="w-full p-2 border rounded-md">
+                                    <select name="new_role" class="w-full p-2 border rounded-md">
+                                        <option value="auditor">Auditor</option>
+                                        <option value="visualizador">Visualizador</option>
+                                        <option value="admin">Administrador</option>
+                                    </select>
+                                    <div id="admin-error" class="text-red-500 text-sm hidden"></div>
+                                    <button type="submit" class="w-full py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Crear Usuario</button>
+                                </form>
+                             </div>
+                             <div>
+                                <h3 class="text-lg font-semibold mb-3">Usuarios Existentes</h3>
+                                <ul id="user-list" class="space-y-2 h-48 overflow-y-auto pr-2"></ul>
+                             </div>
+                         </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.17.1/firebase-app.js";
+    import { 
+        getAuth, 
+        onAuthStateChanged, 
+        signInWithEmailAndPassword, 
+        createUserWithEmailAndPassword, 
+        signOut 
+    } from "https://www.gstatic.com/firebasejs/9.17.1/firebase-auth.js";
+    import { 
+        getFirestore, 
+        collection, 
+        onSnapshot, 
+        addDoc, 
+        doc, 
+        updateDoc, 
+        deleteDoc,
+        getDoc,
+        setDoc,
+        serverTimestamp,
+        arrayUnion,
+        Timestamp
+    } from "https://www.gstatic.com/firebasejs/9.17.1/firebase-firestore.js";
+    
+    // --- INICIALIZACIÓN DE FIREBASE ---
+    const app = initializeApp(window.firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    const STATUSES = ["Iniciado", "En Trámite", "Finalizado", "Cancelado"];
+    const STATUS_COLORS = {"Iniciado":{bg:"bg-orange-100",text:"text-orange-800",border:"border-orange-400",indicator:"bg-orange-500"},"En Trámite":{bg:"bg-blue-100",text:"text-blue-800",border:"border-blue-400",indicator:"bg-blue-500"},"Finalizado":{bg:"bg-green-100",text:"text-green-800",border:"border-green-400",indicator:"bg-green-500"},"Cancelado":{bg:"bg-red-100",text:"text-red-800",border:"border-red-400",indicator:"bg-red-500"}};
+
+    let appState = {
+        currentUser: null,
+        users: [],
+        tasks: [],
+        visits: [],
+        editingTaskId: null,
+        editingVisitId: null,
+        filters: { ips: null, tipo_actividad: null, estado: null, auditor: null, searchTerm: '' },
+        pagination: { currentPage: 1, rowsPerPage: 10 },
+        historicPagination: { currentPage: 1, rowsPerPage: 10 },
+        unsubscribeUsers: null,
+        unsubscribeTasks: null,
+        unsubscribeVisits: null,
+    };
+
+    let typeChartInstance = null;
+    let statusChartInstance = null;
+    let calendar = null;
+
+    // --- LÓGICA DE AUTENTICACIÓN Y ROLES ---
+
+    onAuthStateChanged(auth, async (user) => {
+        const loginError = document.getElementById('login-error');
+        if (user) {
+            const userDocRef = doc(db, "users", user.uid);
+            const userDocSnap = await getDoc(userDocRef);
+            if (userDocSnap.exists()) {
+                appState.currentUser = { uid: user.uid, email: user.email, role: userDocSnap.data().role };
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('main-app').classList.add('flex');
+                document.getElementById('main-app').classList.remove('hidden');
+                initializeListeners();
+            } else {
+                loginError.textContent = "Autenticación exitosa, pero no se encontró el rol del usuario en la base de datos.";
+                loginError.classList.remove('hidden');
+                await signOut(auth);
+            }
+        } else {
+            appState.currentUser = null;
+            document.getElementById('main-app').classList.add('hidden');
+            document.getElementById('main-app').classList.remove('flex');
+            document.getElementById('login-screen').classList.remove('hidden');
+            if (appState.unsubscribeUsers) appState.unsubscribeUsers();
+            if (appState.unsubscribeTasks) appState.unsubscribeTasks();
+            if (appState.unsubscribeVisits) appState.unsubscribeVisits();
+        }
+    });
+    
+    async function handleLogin(e) {
+        e.preventDefault();
+        const email = e.target.username.value;
+        const password = e.target.password.value;
+        const loginError = document.getElementById('login-error');
+        loginError.classList.add('hidden');
+        try {
+            await signInWithEmailAndPassword(auth, email, password);
+        } catch (error) {
+            loginError.textContent = "Usuario o clave incorrectos.";
+            loginError.classList.remove('hidden');
+        }
+    }
+
+    window.handleLogout = function() {
+        signOut(auth);
+        document.getElementById('login-form').reset();
+    }
+    
+    // --- LISTENERS DE FIRESTORE ---
+    function initializeListeners() {
+        if (appState.unsubscribeUsers) appState.unsubscribeUsers();
+        if (appState.unsubscribeTasks) appState.unsubscribeTasks();
+        if (appState.unsubscribeVisits) appState.unsubscribeVisits();
+
+        if (appState.currentUser?.role === 'admin') {
+            appState.unsubscribeUsers = onSnapshot(collection(db, "users"), (snapshot) => {
+                appState.users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderAdminPanel();
+            });
+        }
+        
+        appState.unsubscribeTasks = onSnapshot(collection(db, "tasks"), (snapshot) => {
+            appState.tasks = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+                fecha_inicio: doc.data().fecha_inicio?.toDate(),
+                fecha_inicio_solicitud: doc.data().fecha_inicio_solicitud?.toDate(),
+                fecha_fin: doc.data().fecha_fin?.toDate()
+            }));
+            renderAppForRole();
+        });
+        
+        appState.unsubscribeVisits = onSnapshot(collection(db, "visits"), (snapshot) => {
+            appState.visits = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+                start: doc.data().start?.toDate(),
+            }));
+            if(calendar) {
+                renderCalendarEvents();
+            }
+        });
+    }
+
+    function renderAppForRole() {
+        if (!appState.currentUser) return;
+        document.getElementById('user-display').textContent = appState.currentUser.email;
+        document.getElementById('role-display').textContent = appState.currentUser.role.charAt(0).toUpperCase() + appState.currentUser.role.slice(1);
+        
+        const navAdmin = document.getElementById('nav-admin');
+        const navAddTramite = document.getElementById('nav-add-tramite');
+        const navExport = document.getElementById('nav-export');
+
+        navAdmin.classList.toggle('hidden', appState.currentUser.role !== 'admin');
+        const isAuditor = appState.currentUser.role === 'auditor';
+        navAddTramite.classList.toggle('hidden', !isAuditor);
+        navExport.classList.toggle('hidden', !isAuditor);
+        
+        handleNavigation('dashboard');
+        renderTasksView();
+        renderHistoricView();
+        updateDashboard();
+        populateFilters();
+        renderActiveFilters();
+    }
+
+    function renderAdminPanel() {
+        const userList = document.getElementById('user-list');
+        if (!userList) return;
+        userList.innerHTML = '';
+        appState.users.forEach(user => {
+            const li = document.createElement('li');
+            li.className = 'bg-gray-100 p-2 rounded-md flex justify-between items-center';
+            li.innerHTML = `<div><span class="font-medium">${user.email}</span><span class="text-xs text-gray-500 ml-2 capitalize">${user.role}</span></div><button onclick="handleDeleteUser('${user.id}')" class="text-red-500 hover:text-red-700 p-1 rounded-full"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>`;
+            userList.appendChild(li);
+        });
+    }
+    
+    window.handleDeleteUser = async (userId) => {
+        if (confirm("¿Estás seguro de que quieres eliminar este usuario?")) {
+             await deleteDoc(doc(db, "users", userId));
+        }
+    }
+
+    async function handleCreateUser(e) {
+        e.preventDefault();
+        const form = e.target;
+        const email = form.new_username.value;
+        const password = form.new_password.value;
+        const role = form.new_role.value;
+        const adminError = document.getElementById('admin-error');
+        
+        try {
+            const tempApp = initializeApp(window.firebaseConfig, `secondary-${Date.now()}`);
+            const tempAuth = getAuth(tempApp);
+            const userCredential = await createUserWithEmailAndPassword(tempAuth, email, password);
+            await setDoc(doc(db, "users", userCredential.user.uid), { email, role });
+            await signOut(tempAuth);
+            adminError.classList.add('hidden');
+            form.reset();
+        } catch (error) {
+            adminError.textContent = error.message;
+            adminError.classList.remove('hidden');
+        }
+    }
+    
+    // --- LÓGICA PRINCIPAL ---
+
+    window.handleDeleteTask = async (taskId) => {
+        if (confirm("¿Estás seguro de que quieres eliminar este trámite?")) {
+            await deleteDoc(doc(db, "tasks", taskId));
+        }
+    }
+
+    function getFilteredTasks(isHistoric = false) {
+        const { ips, tipo_actividad, estado, searchTerm } = appState.filters;
+        const lowerCaseSearchTerm = searchTerm.toLowerCase().trim();
+
+        return appState.tasks.filter(task => {
+            const isClosed = task.estado === 'Finalizado' || task.estado === 'Cancelado';
+            if (isHistoric && !isClosed) return false;
+            if (!isHistoric && isClosed) return false;
+
+            const searchMatch = !lowerCaseSearchTerm ||
+                (task.id_paciente?.toLowerCase().includes(lowerCaseSearchTerm)) ||
+                (task.nombre_paciente?.toLowerCase().includes(lowerCaseSearchTerm));
+            
+            const ipsMatch = !ips || task.nombre_ips === ips;
+            const tipoMatch = !tipo_actividad || task.tipo_actividad === tipo_actividad;
+            const estadoMatch = !estado || task.estado === estado;
+            
+            return searchMatch && ipsMatch && tipoMatch && estadoMatch;
+        });
+    }
+
+    function renderTasksView(isHistoric = false) {
+        const tableBodyId = isHistoric ? 'historic-tasks-table-body' : 'tasks-table-body';
+        const tableBody = document.getElementById(tableBodyId);
+        if (!tableBody) return;
+        
+        const tasksToRender = getFilteredTasks(isHistoric);
+        
+        const paginationState = isHistoric ? appState.historicPagination : appState.pagination;
+        const { currentPage, rowsPerPage } = paginationState;
+        const totalPages = Math.ceil(tasksToRender.length / rowsPerPage);
+        const paginatedTasks = tasksToRender.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
+
+        tableBody.innerHTML = '';
+        paginatedTasks.forEach(task => {
+            const row = document.createElement('tr');
+            row.className = 'bg-white border-b table-row-hover';
+            row.onclick = () => openModal(task.id);
+
+            const daysInProcess = task.fecha_inicio_solicitud ? Math.ceil(((task.fecha_fin || new Date()) - task.fecha_inicio_solicitud) / (1000 * 60 * 60 * 24)) : 'N/A';
+
+            const cells = [
+                task.id_paciente || '',
+                `<span class="font-medium text-gray-900 whitespace-nowrap">${task.nombre_paciente || ''}</span>`,
+                task.tipo_actividad || '',
+                task.nombre_ips || '',
+                isHistoric ? formatDate(task.fecha_fin) : formatDate(task.fecha_inicio_solicitud),
+                `${daysInProcess} días`,
+                `<div class="flex items-center"><div class="h-2.5 w-2.5 rounded-full ${STATUS_COLORS[task.estado]?.indicator || 'bg-gray-400'} mr-2"></div>${task.estado}</div>`,
+                task.nombre_auditor || ''
+            ];
+
+            if(!isHistoric) {
+                cells.push(generateActionButtons(task));
+            }
+
+            row.innerHTML = cells.map(cell => `<td class="px-4 py-2">${cell}</td>`).join('');
+            tableBody.appendChild(row);
+        });
+        
+        renderPaginationControls(totalPages, isHistoric ? 'historic' : 'active');
+    }
+
+    const renderHistoricView = () => renderTasksView(true);
+    
+    function renderPaginationControls(totalPages, type) {
+        const container = document.getElementById(type === 'active' ? 'pagination-controls' : 'historic-pagination-controls');
+        if (!container) return;
+        container.innerHTML = '';
+        if (totalPages <= 1) return;
+
+        const currentPage = type === 'active' ? appState.pagination.currentPage : appState.historicPagination.currentPage;
+
+        let buttons = '';
+        for (let i = 1; i <= totalPages; i++) {
+            const activeClass = i === currentPage ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-100';
+            buttons += `<button onclick="goToPage(${i}, '${type}')" class="px-3 py-1 border rounded-md ${activeClass}">${i}</button>`;
+        }
+        container.innerHTML = `<div class="flex space-x-2">${buttons}</div>`;
+    }
+
+    window.goToPage = function(page, type) {
+        if (type === 'active') {
+            appState.pagination.currentPage = page;
+            renderTasksView();
+        } else {
+            appState.historicPagination.currentPage = page;
+            renderHistoricView();
+        }
+    }
+    
+    function generateActionButtons(task) {
+        let buttons = '';
+        if (!appState.currentUser) return '';
+        if (appState.currentUser.role === 'auditor') {
+            if (task.estado === 'Iniciado') buttons += `<button onclick="event.stopPropagation(); changeStatus('${task.id}', 'En Trámite')" class="px-2 py-1 text-xs font-semibold rounded-md bg-blue-500 text-white hover:bg-blue-600">Poner en Trámite</button>`;
+            if (task.estado !== 'Finalizado' && task.estado !== 'Cancelado') {
+                buttons += `<button onclick="event.stopPropagation(); changeStatus('${task.id}', 'Finalizado')" class="px-2 py-1 ml-2 text-xs font-semibold rounded-md bg-green-500 text-white hover:bg-green-600">Finalizar</button>`;
+                buttons += `<button onclick="event.stopPropagation(); changeStatus('${task.id}', 'Cancelado')" class="px-2 py-1 ml-2 text-xs font-semibold rounded-md bg-red-500 text-white hover:bg-red-600">Cancelar</button>`;
+            }
+        } else if (appState.currentUser.role === 'admin') {
+            buttons += `<button onclick="event.stopPropagation(); handleDeleteTask('${task.id}')" class="px-2 py-1 text-xs font-semibold rounded-md bg-gray-700 text-white hover:bg-gray-800">Eliminar</button>`;
+        }
+        return buttons || '<span class="text-xs text-gray-400">N/A</span>';
+    }
+
+    function updateDashboard() {
+        document.getElementById('kpi-iniciado').textContent = appState.tasks.filter(t => t.estado === 'Iniciado').length;
+        document.getElementById('kpi-en-tramite').textContent = appState.tasks.filter(t => t.estado === 'En Trámite').length;
+        document.getElementById('kpi-finalizados').textContent = appState.tasks.filter(t => t.estado === 'Finalizado').length;
+        
+        const activeTasks = appState.tasks.filter(t => t.estado !== 'Finalizado' && t.estado !== 'Cancelado');
+        const ipsList = document.getElementById('ips-list');
+        ipsList.innerHTML = '';
+        const ipsCounts = activeTasks.reduce((acc,task) => { 
+            if (task.nombre_ips && task.nombre_ips !== 'undefined') acc[task.nombre_ips] = (acc[task.nombre_ips] || 0) + 1;
+            return acc; 
+        }, {});
+        if(Object.keys(ipsCounts).length === 0) ipsList.innerHTML = '<li class="text-center text-gray-500">No hay trámites activos.</li>';
+        else Object.entries(ipsCounts).sort((a,b) => b[1] - a[1]).forEach(([ips, count]) => {
+            const li = document.createElement('li');
+            li.className = 'flex justify-between items-center bg-gray-50 p-3 rounded-lg hover:bg-gray-200 transition-colors';
+            li.onclick = () => setFilter('ips', ips);
+            li.innerHTML = `<span class="text-gray-700 font-medium">${ips}</span><span class="font-bold text-blue-600 bg-blue-100 px-3 py-1 rounded-full text-sm">${count}</span>`;
+            ipsList.appendChild(li);
+        });
+        const typeCounts = activeTasks.reduce((acc, task) => { 
+            if (task.tipo_actividad && task.tipo_actividad !== 'undefined') acc[task.tipo_actividad] = (acc[task.tipo_actividad] || 0) + 1;
+            return acc; 
+        }, {});
+        if(typeChartInstance) typeChartInstance.destroy();
+        typeChartInstance = new Chart(document.getElementById('type-chart'), { type: 'doughnut', data: { labels: Object.keys(typeCounts), datasets: [{ data: Object.values(typeCounts), backgroundColor: ['#3b82f6','#10b981','#f97316','#8b5cf6','#ec4899','#f59e0b','#ef4444','#6b7280', '#14b8a6', '#d946ef'], hoverOffset: 4 }] }, options: { responsive: true, maintainAspectRatio: false, onClick: (evt, elements) => { if (elements.length > 0) { const clickedLabel = typeChartInstance.data.labels[elements[0].index]; setFilter('tipo_actividad', clickedLabel); } }, plugins: { legend: { position: 'bottom' } } } });
+        const statusCounts = activeTasks.reduce((acc, status) => { acc[status.estado] = (acc[status.estado] || 0) + 1; return acc; }, {});
+        if(statusChartInstance) statusChartInstance.destroy();
+        statusChartInstance = new Chart(document.getElementById('status-chart'), { type: 'bar', data: { labels: STATUSES.filter(s => !['Finalizado', 'Cancelado'].includes(s)), datasets: [{ label: 'Nº de Trámites', data: STATUSES.filter(s => !['Finalizado', 'Cancelado'].includes(s)).map(s => statusCounts[s] || 0), backgroundColor: STATUSES.filter(s => !['Finalizado', 'Cancelado'].includes(s)).map(s => STATUS_COLORS[s].indicator.replace('bg-','').replace('-500','')), borderWidth: 1 }] }, options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', onClick: (evt, elements) => { if (elements.length > 0) { const clickedLabel = statusChartInstance.data.labels[elements[0].index]; setFilter('estado', clickedLabel); } }, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } } });
+    }
+
+    async function handleAddTask(e) {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const fechaInicioSolicitud = formData.get('fecha_inicio_solicitud');
+        const newTask = { 
+            id_paciente: formData.get('id_paciente'), 
+            nombre_paciente: formData.get('nombre_paciente') || 'N/A', 
+            nombre_auditor: formData.get('nombre_auditor'), 
+            nombre_ips: formData.get('nombre_ips'), 
+            tipo_actividad: formData.get('tipo_actividad'), 
+            descripcion_inicial: formData.get('descripcion_inicial'), 
+            estado: 'Iniciado', 
+            fecha_inicio: serverTimestamp(),
+            fecha_inicio_solicitud: fechaInicioSolicitud ? Timestamp.fromDate(new Date(fechaInicioSolicitud)) : null,
+            fecha_fin: null, 
+            notas_seguimiento: [] 
+        };
+        await addDoc(collection(db, 'tasks'), newTask);
+        e.target.reset();
+        handleNavigation('table');
+    }
+
+    window.changeStatus = async (taskId, newStatus) => {
+        const taskRef = doc(db, "tasks", taskId);
+        const updateData = { estado: newStatus };
+        if (newStatus === 'Finalizado' || newStatus === 'Cancelado') {
+            updateData.fecha_fin = serverTimestamp();
+        }
+        await updateDoc(taskRef, updateData);
+    }
+    
+    // --- LÓGICA DE NAVEGACIÓN Y FILTROS ---
+    window.handleNavigation = (viewId) => {
+        document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
+        document.getElementById(`${viewId}-view`)?.classList.remove('hidden');
+        
+        document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+        document.querySelector(`.nav-link[data-view="${viewId}"]`)?.classList.add('active');
+
+        if (viewId === 'calendar' && !calendar) {
+            initializeCalendar();
+        }
+    }
+
+    window.setFilter = (key, value) => {
+        appState.filters[key] = value;
+        handleNavigation('table');
+        renderActiveFilters();
+    }
+
+    window.clearFilters = () => {
+        appState.filters = { ips: null, tipo_actividad: null, estado: null, searchTerm: '' };
+        document.getElementById('global-search').value = '';
+        renderTasksView();
+        renderActiveFilters();
+    }
+
+    function renderActiveFilters() {
+        const container = document.getElementById('active-filters-section');
+        const list = document.getElementById('active-filters-list');
+        list.innerHTML = '<h4 class="text-sm font-semibold text-gray-600">Filtros Activos:</h4>';
+        const activeFilters = Object.entries(appState.filters).filter(([, value]) => value);
+        if (activeFilters.length === 0) { container.classList.add('hidden'); return; }
+        container.classList.remove('hidden');
+        activeFilters.forEach(([key, value]) => {
+            if (key === 'searchTerm') return;
+            const filterTag = document.createElement('span');
+            filterTag.className = 'bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-1 rounded-full flex items-center';
+            let keyText = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            filterTag.innerHTML = `<span>${keyText}: ${value}</span><button onclick="clearFilter('${key}')" class="ml-1.5">&times;</button>`;
+            list.appendChild(filterTag);
+        });
+    }
+
+    window.clearFilter = (key) => { appState.filters[key] = null; renderTasksView(); renderActiveFilters(); }
+
+    // --- LÓGICA DE MODALES ---
+    window.openModal = (taskId) => {
+        const modal = document.getElementById('task-modal');
+        const task = appState.tasks.find(t => t.id === taskId);
+        if (!task) return;
+
+        appState.editingTaskId = taskId;
+        
+        document.getElementById('modal-status-indicator').className = `h-4 w-4 rounded-full ${STATUS_COLORS[task.estado].indicator}`;
+        document.getElementById('modal-title').textContent = `Detalles: ${task.tipo_actividad}`;
+        document.getElementById('modal-id-paciente').textContent = task.id_paciente;
+        document.getElementById('modal-nombre-paciente').textContent = task.nombre_paciente;
+        document.getElementById('modal-nombre-auditor').textContent = task.nombre_auditor;
+        document.getElementById('modal-nombre-ips').textContent = task.nombre_ips;
+        document.getElementById('modal-tipo-actividad').textContent = task.tipo_actividad;
+        document.getElementById('modal-fecha-inicio').textContent = formatDate(task.fecha_inicio);
+        document.getElementById('modal-fecha-inicio-solicitud').textContent = formatDate(task.fecha_inicio_solicitud);
+        document.getElementById('modal-fecha-fin').textContent = task.fecha_fin ? formatDate(task.fecha_fin) : 'Aún en curso';
+        document.getElementById('modal-descripcion').textContent = task.descripcion_inicial;
+        
+        renderNotesHistory(task.notas_seguimiento);
+        document.getElementById('add-note-section').classList.toggle('hidden', appState.currentUser.role !== 'auditor');
+
+        handleWindowNav('info');
+        modal.classList.remove('hidden');
+        setTimeout(() => {
+            modal.classList.remove('opacity-0');
+            modal.querySelector('.modal-content').classList.remove('scale-95');
+        }, 10);
+    }
+    
+    window.handleWindowNav = (viewId) => {
+        document.querySelectorAll('#task-modal .window-view').forEach(v => v.classList.add('hidden'));
+        document.getElementById(`window-view-${viewId}`)?.classList.remove('hidden');
+
+        document.querySelectorAll('#task-modal .window-nav-link').forEach(l => l.classList.remove('active'));
+        document.querySelector(`#task-modal .window-nav-link[onclick="handleWindowNav('${viewId}')"]`)?.classList.add('active');
+    }
+
+    function renderNotesHistory(notes) {
+        const historyContainer = document.getElementById('modal-notes-history');
+        historyContainer.innerHTML = notes && notes.length > 0
+            ? notes.slice().reverse().map(note => `
+                <div class="bg-white p-2 rounded-md border border-gray-200">
+                    <p class="text-gray-800 text-sm">${note.text}</p>
+                    <p class="text-xs text-gray-500 mt-1 text-right">-- ${note.author} @ ${formatDate(new Date(note.date))}</p>
+                </div>`).join('')
+            : '<p class="text-center text-gray-500 text-sm">No hay notas de seguimiento.</p>';
+    }
+
+    async function handleAddNote(e) {
+        e.preventDefault();
+        const newNoteText = document.getElementById('modal-new-note').value.trim();
+        if (newNoteText && appState.editingTaskId) {
+            const newNote = { text: newNoteText, author: appState.currentUser.email, date: new Date().toISOString() };
+            const taskRef = doc(db, "tasks", appState.editingTaskId);
+            await updateDoc(taskRef, { notas_seguimiento: arrayUnion(newNote) });
+            document.getElementById('modal-new-note').value = '';
+        }
+    }
+
+    window.closeModal = () => {
+        const modal = document.getElementById('task-modal');
+        appState.editingTaskId = null; 
+        modal.classList.add('opacity-0'); 
+        modal.querySelector('.modal-content').classList.add('scale-95'); 
+        setTimeout(() => modal.classList.add('hidden'), 250);
+    }
+    
+    // --- LÓGICA DEL CALENDARIO ---
+    function initializeCalendar() {
+        const calendarEl = document.getElementById('calendar');
+        if (!calendarEl) return;
+        calendar = new FullCalendar.Calendar(calendarEl, {
+            locale: 'es',
+            initialView: 'dayGridMonth',
+            headerToolbar: {
+                left: 'prev,next today',
+                center: 'title',
+                right: 'dayGridMonth,timeGridWeek,timeGridDay'
+            },
+            events: [],
+            editable: true,
+            droppable: false,
+            eventClick: (info) => {
+                openVisitModal(info.event.id);
+            }
+        });
+        calendar.render();
+        renderCalendarEvents();
+    }
+
+    function renderCalendarEvents() {
+        if (!calendar) return;
+        const events = appState.visits.map(visit => ({
+            id: visit.id,
+            title: visit.title,
+            start: visit.start,
+            backgroundColor: visit.status === 'Ejecutada' ? '#10B981' : '#3B82F6',
+            borderColor: visit.status === 'Ejecutada' ? '#059669' : '#2563EB',
+        }));
+        calendar.getEventSources().forEach(source => source.remove());
+        calendar.addEventSource(events);
+    }
+
+    window.openVisitModal = (visitId = null) => {
+        const modal = document.getElementById('visit-modal');
+        const title = document.getElementById('visit-modal-title');
+        const detailsView = document.getElementById('visit-details-view');
+        const editView = document.getElementById('visit-edit-view');
+        const footer = document.getElementById('visit-modal-footer');
+        
+        appState.editingVisitId = visitId;
+
+        if (visitId) { // Viewing/Editing existing visit
+            const visit = appState.visits.find(v => v.id === visitId);
+            if (!visit) return;
+            
+            // Populate details view
+            document.getElementById('visit-modal-ips-details').textContent = visit.title;
+            document.getElementById('visit-modal-date-details').textContent = formatDate(visit.start);
+            document.getElementById('visit-modal-auditor-details').textContent = visit.auditorEmail;
+            document.getElementById('visit-modal-status-details').textContent = visit.status;
+            document.getElementById('visit-modal-notes-details').textContent = visit.notes || 'Sin notas.';
+            
+            // Populate edit view
+            const form = document.getElementById('visit-form');
+            form['visit-id'].value = visit.id;
+            form['visit-ips'].value = visit.title;
+            form['visit-date'].value = visit.start ? new Date(visit.start.getTime() - (visit.start.getTimezoneOffset() * 60000)).toISOString().slice(0, 16) : '';
+            form['visit-notes'].value = visit.notes || '';
+
+            enableVisitViewMode(visit);
+
+        } else { // Adding new visit
+            title.textContent = "Agendar Nueva Visita";
+            detailsView.classList.add('hidden');
+            editView.classList.remove('hidden');
+            document.getElementById('visit-form').reset();
+            
+            footer.innerHTML = `
+                <button onclick="handleSaveVisit()" class="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-semibold">Guardar Visita</button>
+                <button onclick="closeVisitModal()" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md text-sm font-semibold">Cancelar</button>
+            `;
+        }
+
+        modal.classList.remove('hidden');
+        setTimeout(() => {
+            modal.classList.remove('opacity-0');
+            modal.querySelector('.modal-content').classList.remove('scale-95');
+        }, 10);
+    }
+
+    function enableVisitViewMode(visit) {
+        document.getElementById('visit-modal-title').textContent = "Detalles de la Visita";
+        document.getElementById('visit-details-view').classList.remove('hidden');
+        document.getElementById('visit-edit-view').classList.add('hidden');
+        
+        const footer = document.getElementById('visit-modal-footer');
+        footer.innerHTML = ''; // Clear footer
+        
+        const canEdit = appState.currentUser.role === 'admin' || appState.currentUser.email === visit.auditorEmail;
+
+        if (canEdit) {
+             footer.innerHTML += `<button onclick="handleDeleteVisit()" class="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-semibold">Eliminar</button>`;
+             footer.innerHTML += `<button onclick="enableVisitEditMode()" class="bg-yellow-500 text-white px-4 py-2 rounded-md text-sm font-semibold">Editar</button>`;
+             if (visit.status !== 'Ejecutada') {
+                footer.innerHTML += `<button onclick="handleMarkVisitAsExecuted()" class="bg-green-600 text-white px-4 py-2 rounded-md text-sm font-semibold">Marcar como Ejecutada</button>`;
+             }
+        }
+        footer.innerHTML += `<button onclick="closeVisitModal()" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md text-sm font-semibold">Cerrar</button>`;
+    }
+    
+    window.enableVisitEditMode = () => {
+        document.getElementById('visit-modal-title').textContent = "Editar Visita";
+        document.getElementById('visit-details-view').classList.add('hidden');
+        document.getElementById('visit-edit-view').classList.remove('hidden');
+
+        const footer = document.getElementById('visit-modal-footer');
+        footer.innerHTML = `
+            <button onclick="handleSaveVisit()" class="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-semibold">Guardar Cambios</button>
+            <button onclick="closeVisitModal()" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md text-sm font-semibold">Cancelar</button>
+        `;
+    }
+    
+    window.closeVisitModal = () => {
+        const modal = document.getElementById('visit-modal');
+        modal.classList.add('opacity-0');
+        modal.querySelector('.modal-content').classList.add('scale-95');
+        setTimeout(() => {
+            modal.classList.add('hidden');
+            appState.editingVisitId = null;
+        }, 250);
+    }
+
+    window.handleSaveVisit = async () => {
+        const form = document.getElementById('visit-form');
+        const visitData = {
+            title: form['visit-ips'].value,
+            start: Timestamp.fromDate(new Date(form['visit-date'].value)),
+            notes: form['visit-notes'].value,
+            auditorEmail: appState.currentUser.email
+        };
+
+        if (appState.editingVisitId) {
+            // Update existing visit
+            const visitRef = doc(db, "visits", appState.editingVisitId);
+            await updateDoc(visitRef, visitData);
+        } else {
+            // Add new visit
+            visitData.status = 'Programada';
+            await addDoc(collection(db, 'visits'), visitData);
+        }
+        closeVisitModal();
+    }
+    
+    window.handleMarkVisitAsExecuted = async () => {
+        if(!appState.editingVisitId) return;
+        const visitRef = doc(db, "visits", appState.editingVisitId);
+        await updateDoc(visitRef, { status: 'Ejecutada' });
+        closeVisitModal();
+    }
+
+    window.handleDeleteVisit = async () => {
+        if(!appState.editingVisitId) return;
+        if(confirm("¿Estás seguro de que quieres eliminar esta visita?")) {
+            const visitRef = doc(db, "visits", appState.editingVisitId);
+            await deleteDoc(visitRef);
+            closeVisitModal();
+        }
+    }
+
+    // --- UTILIDADES Y EVENT LISTENERS ---
+    
+    function formatDate(date) { if(!date) return 'N/A'; return new Date(date).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' }); }
+    
+    function formatNotesForCSV(notes) {
+        if (!notes || notes.length === 0) return "";
+        return notes.map(note => `(${formatDate(new Date(note.date))} por ${note.author}): ${(note.text || '').replace(/"/g, '""').replace(/\r?\n/g, " ")}`).join(' | ');
+    }
+
+    function formatDateForCSV(date) { if(!date) return ''; return new Date(date).toISOString(); }
+
+    function populateFilters() {
+        const monthFilter = document.getElementById('filter-month');
+        const ipsFilter = document.getElementById('filter-ips');
+        const auditorFilter = document.getElementById('filter-auditor');
+        const months = ["Todos", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+        monthFilter.innerHTML = months.map((month, index) => `<option value="${index === 0 ? 'all' : index-1}">${month}</option>`).join('');
+        const allIps = [...new Set(appState.tasks.map(task => task.nombre_ips).filter(Boolean))];
+        ipsFilter.innerHTML = '<option value="all">Todas</option>' + allIps.map(ips => `<option value="${ips}">${ips}</option>`).join('');
+        const allAuditors = [...new Set(appState.tasks.map(task => task.nombre_auditor).filter(Boolean))];
+        auditorFilter.innerHTML = '<option value="all">Todos</option>' + allAuditors.map(auditor => `<option value="${auditor}">${auditor}</option>`).join('');
+    }
+
+    function downloadCSV() {
+        const month = document.getElementById('filter-month').value; const ips = document.getElementById('filter-ips').value; const auditor = document.getElementById('filter-auditor').value;
+        let filteredTasks = appState.tasks.filter(task => { const taskMonth = new Date(task.fecha_inicio).getMonth(); const monthMatch = (month === 'all') || (taskMonth == month); const ipsMatch = (ips === 'all') || (task.nombre_ips === ips); const auditorMatch = (auditor === 'all') || (task.nombre_auditor === auditor); return monthMatch && ipsMatch && auditorMatch; });
+        if(filteredTasks.length === 0) { alert("No hay datos que coincidan con los filtros seleccionados."); return; }
+        const headers = ["ID Trámite", "ID Paciente", "Nombre Paciente", "Nombre Auditor", "Nombre IPS", "Tipo Actividad", "Descripción Inicial", "Estado", "Fecha Creación", "Fecha Inicio Solicitud", "Fecha Fin", "Notas Seguimiento"];
+        const csvRows = [headers.join(',')];
+        filteredTasks.forEach(task => { 
+            const values = [
+                task.id, 
+                task.id_paciente, 
+                `"${(task.nombre_paciente || '').replace(/"/g, '""')}"`, 
+                `"${(task.nombre_auditor || '').replace(/"/g, '""')}"`, 
+                `"${(task.nombre_ips || '').replace(/"/g, '""')}"`, 
+                task.tipo_actividad, 
+                `"${(task.descripcion_inicial || '').replace(/\r?\n/g, " ").replace(/"/g, '""')}"`, 
+                task.estado, 
+                formatDateForCSV(task.fecha_inicio),
+                formatDateForCSV(task.fecha_inicio_solicitud),
+                formatDateForCSV(task.fecha_fin), 
+                `"${formatNotesForCSV(task.notas_seguimiento)}"`
+            ]; 
+            csvRows.push(values.join(',')); 
+        });
+        const csvString = csvRows.join('\n'); const blob = new Blob([`\uFEFF${csvString}`], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a'); const url = URL.createObjectURL(blob); link.setAttribute('href', url); link.setAttribute('download', 'reporte_tramites.csv'); link.style.visibility = 'hidden'; document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    }
+    
+    function setupEventListeners() {
+        document.getElementById('login-form')?.addEventListener('submit', handleLogin);
+        document.getElementById('create-user-form')?.addEventListener('submit', handleCreateUser);
+        document.getElementById('download-btn')?.addEventListener('click', downloadCSV);
+        document.getElementById('add-note-form')?.addEventListener('submit', handleAddNote);
+        document.getElementById('add-task-form')?.addEventListener('submit', handleAddTask);
+        document.getElementById('add-visit-btn')?.addEventListener('click', () => openVisitModal());
+        document.getElementById('analyze-email-btn')?.addEventListener('click', handleAnalyzeEmail);
+        
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                handleNavigation(e.currentTarget.dataset.view);
+            });
+        });
+
+        const hamburgerBtn = document.getElementById('hamburger-btn');
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+        if (hamburgerBtn && sidebar && overlay) {
+            hamburgerBtn.addEventListener('click', () => {
+                sidebar.classList.toggle('-translate-x-full');
+                overlay.classList.toggle('hidden');
+            });
+            overlay.addEventListener('click', () => {
+                sidebar.classList.add('-translate-x-full');
+                overlay.classList.add('hidden');
+            });
+        }
+        
+        const globalSearch = document.getElementById('global-search');
+        if (globalSearch) {
+            globalSearch.addEventListener('input', (e) => {
+                appState.filters.searchTerm = e.target.value;
+                appState.pagination.currentPage = 1;
+                appState.historicPagination.currentPage = 1;
+
+                const currentView = document.querySelector('.nav-link.active')?.dataset.view;
+                if (e.target.value.trim() !== '' && !['table', 'historic'].includes(currentView)) {
+                    handleNavigation('table');
+                } else if (currentView === 'table') {
+                    renderTasksView();
+                } else if (currentView === 'historic') {
+                    renderHistoricView();
+                }
+            });
+        }
+    }
+
+    async function handleAnalyzeEmail() {
+        const emailText = document.getElementById('email-paste-area').value;
+        if (!emailText.trim()) {
+            alert('Por favor, pega el contenido del correo en el área de texto.');
+            return;
+        }
+
+        const loader = document.getElementById('ai-loader');
+        loader.classList.remove('hidden');
+
+        try {
+            const extractedData = await callGeminiAPI(emailText);
+            
+            const form = document.getElementById('add-task-form');
+            form.id_paciente.value = extractedData.id_paciente || '';
+            form.nombre_paciente.value = extractedData.nombre_paciente || '';
+            form.nombre_ips.value = extractedData.nombre_ips || '';
+            form.tipo_actividad.value = extractedData.tipo_actividad || '';
+            form.descripcion_inicial.value = extractedData.descripcion_inicial || '';
+
+        } catch (error) {
+            console.error("Error al analizar el correo con Gemini:", error);
+            alert("Hubo un error al procesar el texto con la IA. Verifica la consola para más detalles.");
+        } finally {
+            loader.classList.add('hidden');
+        }
+    }
+
+    async function callGeminiAPI(text) {
+        // --- PEGA TU LLAVE DE GEMINI AQUÍ ---
+        const apiKey = "AIzaSyA5_XhqAoQhdTL0fh_HGEihTGBAARZPtk8"; 
+        // ------------------------------------
+        
+        if (apiKey === "TU_GEMINI_API_KEY_AQUI" || apiKey === "") {
+            throw new Error("La API Key de Gemini no ha sido configurada. Por favor, añádela en el código.");
+        }
+
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
+
+        const prompt = `Actúa como un asistente administrativo experto. Lee el siguiente texto de un correo electrónico y extrae la información solicitada. Devuelve solo un objeto JSON válido con las claves: "id_paciente", "nombre_paciente", "nombre_ips", "tipo_actividad", "descripcion_inicial". Si un dato no se encuentra, devuelve null para ese campo. El texto a analizar es: "${text}"`;
+
+        const payload = {
+            contents: [{ parts: [{ text: prompt }] }],
+        };
+
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            throw new Error(`Error de la API de Gemini: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        
+        if (result.candidates && result.candidates[0].content && result.candidates[0].content.parts[0].text) {
+            const rawText = result.candidates[0].content.parts[0].text;
+            // Limpiar el texto para asegurarse de que sea un JSON válido
+            const jsonText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+            return JSON.parse(jsonText);
+        } else {
+            throw new Error("Respuesta inesperada de la API de Gemini.");
+        }
+    }
+
+
+    document.addEventListener('DOMContentLoaded', () => {
+        setupEventListeners();
+    });
+</script>
+</body>
+</html>
+
